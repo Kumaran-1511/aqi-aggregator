@@ -56,7 +56,7 @@ async function bootstrap() {
     await Station.createIndexes();
     console.log('[MongoDB] Verified collection indexes (including 2dsphere on location).');
   } catch (idxErr) {
-    console.warn('[MongoDB] Index creation notice:', idxErr.message);
+    console.log('[MongoDB] Index creation notice:', idxErr.message);
   }
 
   // 4. Seed default admin credentials

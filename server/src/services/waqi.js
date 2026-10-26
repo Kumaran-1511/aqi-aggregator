@@ -93,7 +93,7 @@ function parseLocationInfo(stationName, lat, lng) {
 async function fetchIndiaBoundsWAQI() {
   const token = process.env.WAQI_TOKEN || process.env.AQICN_API_TOKEN;
   if (!token) {
-    console.warn('[WAQI] No WAQI_TOKEN or AQICN_API_TOKEN configured. Skipping bounds fetch.');
+    console.log('[WAQI] Notice: No WAQI_TOKEN or AQICN_API_TOKEN configured. Skipping bounds fetch.');
     return [];
   }
 
@@ -162,7 +162,7 @@ async function fetchIndiaBoundsWAQI() {
       return normalized;
     }
   } catch (err) {
-    console.warn('[WAQI] Bounds fetch error:', err.message);
+    console.log('[WAQI] Bounds fetch notice:', err.message);
   }
 
   return [];
@@ -200,7 +200,7 @@ async function pollWAQI(city = 'chennai') {
       };
     }
   } catch (err) {
-    console.warn(`[WAQI] Poll for ${city} error:`, err.message);
+    console.log(`[WAQI] Poll for ${city} notice:`, err.message);
   }
   return null;
 }

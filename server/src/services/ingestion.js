@@ -242,7 +242,7 @@ class IngestionService {
         };
       }
     } catch (err) {
-      console.warn(`[Open-Meteo] Live fetch skipped for [${lat}, ${lng}]:`, err.message);
+      console.log(`[Open-Meteo] Live fetch skipped for [${lat}, ${lng}]:`, err.message);
     }
     return null;
   }
@@ -262,7 +262,7 @@ class IngestionService {
         return res.data.records;
       }
     } catch (err) {
-      console.warn('[CPCB Data.gov.in] Poll skipped / timed out:', err.message);
+      console.log('[CPCB Data.gov.in] Poll skipped / notice:', err.message);
     }
     return null;
   }
@@ -284,7 +284,7 @@ class IngestionService {
         return res.data.results;
       }
     } catch (err) {
-      console.warn('[OpenAQ] Poll skipped/error:', err.message);
+      console.log('[OpenAQ] Poll skipped/notice:', err.message);
     }
     return null;
   }
@@ -319,7 +319,7 @@ class IngestionService {
         };
       }
     } catch (err) {
-      console.warn('[WAQI] Poll skipped/error:', err.message);
+      console.log('[WAQI] Poll skipped/notice:', err.message);
     }
     return null;
   }
@@ -347,13 +347,13 @@ class IngestionService {
         };
       }
     } catch (err) {
-      console.warn('[IQAir] Poll skipped/error:', err.message);
+      console.log('[IQAir] Poll skipped/notice:', err.message);
     }
     return null;
   }
 
   /**
-   * Synchronize Nationwide CPCB network (covers 200+ stations across Indian states)
+   * Synchronize Nationwide CPCB network (covers 500+ stations across Indian states)
    */
   async syncNationwideCPCB() {
     try {

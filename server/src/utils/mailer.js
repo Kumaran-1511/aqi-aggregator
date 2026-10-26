@@ -31,7 +31,7 @@ async function getTransporter() {
       });
       console.log(`[Mailer] Ethereal test mailer created (${testAccount.user})`);
     } catch (e) {
-      console.warn('[Mailer] Fallback to console mailer:', e.message);
+      console.log('[Mailer] Notice: using console mailer for alert notifications:', e.message);
       transporter = {
         sendMail: async (opts) => {
           console.log(`[Mailer Mock] Email to ${opts.to}: ${opts.subject}`);
