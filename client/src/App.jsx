@@ -137,7 +137,11 @@ export default function App() {
     fetchStations();
     fetchReports();
 
-    const socket = io(import.meta.env.VITE_API_URL || undefined, {
+    const socketEndpoint = import.meta.env.VITE_API_URL
+      ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+      : undefined;
+
+    const socket = io(socketEndpoint, {
       transports: ['websocket', 'polling']
     });
 

@@ -201,8 +201,24 @@ router.get(
 
 
 /**
+// Haversine distance helper for geospatial queries
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
  * @route   GET /api/aqi/nearby
- * @desc    Get stations near given coordinates using 2dsphere $nearSphere
+ * @desc    Get stations near given coordinates using 2dsphere $nearSphere with Haversine fallback
  * @query   lat, lng, radius (in km, default 50km)
  */
 router.get(
@@ -220,31 +236,76 @@ router.get(
       const radiusKm = parseFloat(req.query.radius) || 50;
       const maxDistanceMeters = radiusKm * 1000;
 
-      const stations = await Station.find({
-        location: {
-          $nearSphere: {
-            $geometry: {
-              type: 'Point',
-              coordinates: [lng, lat]
-            },
-            $maxDistance: maxDistanceMeters
-          }
-        },
-        isActive: true
-      });
+      let stations = [];
+      let usedFallback = false;
 
-      // Also get the latest reading for each nearby station
-      const stationIds = stations.map(s => s.stationId);
-      const latestReadings = await Reading.aggregate([
-        { $match: { stationId: { $in: stationIds } } },
-        { $sort: { timestamp: -1 } },
-        {
-          $group: {
-            _id: '$stationId',
-            latestReading: { $first: '$$ROOT' }
-          }
+      if (mongoose.connection.readyState === 1) {
+        try {
+          stations = await Station.find({
+            location: {
+              $nearSphere: {
+                $geometry: {
+                  type: 'Point',
+                  coordinates: [lng, lat]
+                },
+                $maxDistance: maxDistanceMeters
+              }
+            },
+            isActive: true
+          });
+        } catch (geoErr) {
+          console.warn('[Nearby Route] 2dsphere query failed, using mathematical fallback:', geoErr.message);
+          usedFallback = true;
         }
-      ]);
+      } else {
+        usedFallback = true;
+      }
+
+      if (usedFallback || stations.length === 0) {
+        // Fallback: Haversine distance computation against active database or curated stations
+        let candidateStations = [];
+        if (mongoose.connection.readyState === 1) {
+          candidateStations = await Station.find({ isActive: true }).lean().catch(() => []);
+        }
+        if (!candidateStations || candidateStations.length === 0) {
+          candidateStations = cpcbService.getCuratedNationwideCPCBStations();
+        }
+
+        stations = candidateStations
+          .map(st => {
+            const coords = st.location?.coordinates || st.coordinates;
+            if (!coords || coords.length < 2) return null;
+            const dist = calculateDistanceKm(lat, lng, coords[1], coords[0]);
+            return { ...st, distanceKm: Math.round(dist * 10) / 10 };
+          })
+          .filter(st => st && st.distanceKm <= radiusKm)
+          .sort((a, b) => a.distanceKm - b.distanceKm);
+
+        return res.json({
+          success: true,
+          count: stations.length,
+          radiusKm,
+          data: stations
+        });
+      }
+
+      // Also get the latest reading for each nearby station if available
+      const stationIds = stations.map(s => s.stationId);
+      let latestReadings = [];
+      try {
+        latestReadings = await Reading.aggregate([
+          { $match: { stationId: { $in: stationIds } } },
+          { $sort: { timestamp: -1 } },
+          {
+            $group: {
+              _id: '$stationId',
+              latestReading: { $first: '$$ROOT' }
+            }
+          }
+        ]);
+      } catch (aggErr) {
+        console.warn('[Nearby Route] Latest readings lookup skipped:', aggErr.message);
+      }
 
       const readingMap = {};
       latestReadings.forEach(r => {
@@ -252,7 +313,7 @@ router.get(
       });
 
       const enriched = stations.map(s => {
-        const obj = s.toObject();
+        const obj = typeof s.toObject === 'function' ? s.toObject() : { ...s };
         obj.latest = readingMap[s.stationId] || null;
         return obj;
       });
@@ -283,22 +344,56 @@ router.get(
   async (req, res) => {
     try {
       const cityName = req.params.name.trim();
-      const regex = new RegExp(`^${cityName}$`, 'i');
 
-      const stations = await Station.find({ city: regex, isActive: true });
-      if (stations.length === 0) {
-        // Fallback: partial match
-        const partialRegex = new RegExp(cityName, 'i');
-        const partialStations = await Station.find({ city: partialRegex, isActive: true });
-        if (partialStations.length === 0) {
+      if (mongoose.connection.readyState !== 1) {
+        const allStations = cpcbService.getCuratedNationwideCPCBStations();
+        const lower = cityName.toLowerCase();
+        let matches = allStations.filter(s => s.city && s.city.toLowerCase() === lower);
+        if (matches.length === 0) {
+          matches = allStations.filter(s => s.city && s.city.toLowerCase().includes(lower));
+        }
+        if (matches.length === 0) {
           return res.status(404).json({ success: false, message: `No active stations found for city: ${cityName}` });
         }
+        const avgAqi = Math.round(
+          matches.reduce((acc, curr) => acc + (curr.lastAqi || 0), 0) / matches.length
+        );
+        const categoryInfo = getAQICategory(avgAqi);
         return res.json({
           success: true,
           city: cityName,
-          count: partialStations.length,
-          data: partialStations
+          count: matches.length,
+          cityAverageAqi: avgAqi,
+          cityCategory: categoryInfo.name,
+          categoryInfo,
+          data: matches
         });
+      }
+
+      const regex = new RegExp(`^${cityName}$`, 'i');
+      let stations = [];
+      try {
+        stations = await Station.find({ city: regex, isActive: true }).lean();
+        if (stations.length === 0) {
+          const partialRegex = new RegExp(cityName, 'i');
+          stations = await Station.find({ city: partialRegex, isActive: true }).lean();
+        }
+      } catch (dbErr) {
+        console.warn('[City Route] Database query fallback:', dbErr.message);
+      }
+
+      if (stations.length === 0) {
+        // Fallback to curated dataset
+        const allStations = cpcbService.getCuratedNationwideCPCBStations();
+        const lower = cityName.toLowerCase();
+        let matches = allStations.filter(s => s.city && s.city.toLowerCase() === lower);
+        if (matches.length === 0) {
+          matches = allStations.filter(s => s.city && s.city.toLowerCase().includes(lower));
+        }
+        if (matches.length === 0) {
+          return res.status(404).json({ success: false, message: `No active stations found for city: ${cityName}` });
+        }
+        stations = matches;
       }
 
       // Calculate city-wide average AQI

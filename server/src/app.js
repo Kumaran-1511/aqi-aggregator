@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 
+const mongoose = require('mongoose');
+const { corsOptions } = require('./utils/corsConfig');
+
 const aqiRoutes = require('./routes/aqi');
 const { router: authRoutes } = require('./routes/auth');
 const alertsRoutes = require('./routes/alerts');
@@ -12,11 +15,7 @@ const exportRoutes = require('./routes/export');
 const app = express();
 
 // Middlewares
-const allowedOrigins = process.env.CLIENT_URL ? [process.env.CLIENT_URL, 'http://localhost:5173'] : '*';
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
-}));
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -24,13 +23,17 @@ app.use(express.urlencoded({ extended: true }));
 app.get('/health', (req, res) => {
   res.json({
     status: 'online',
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'in-memory-fallback',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.round(process.uptime())
   });
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({
+    status: 'ok',
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'in-memory-fallback'
+  });
 });
 
 // Mount Routes

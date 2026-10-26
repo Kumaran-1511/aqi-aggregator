@@ -6,6 +6,8 @@ const connectDB = require('./config/db');
 const ingestionService = require('./services/ingestion');
 const { seedDefaultAdmin } = require('./routes/auth');
 const { startCronJobs } = require('./jobs/ingestionJob');
+const { isOriginAllowed } = require('./utils/corsConfig');
+const Station = require('./models/Station');
 
 const PORT = process.env.PORT || 5000;
 
@@ -15,11 +17,17 @@ async function bootstrap() {
 
   // 2. Create HTTP Server & Socket.io
   const server = http.createServer(app);
-  const allowedOrigins = process.env.CLIENT_URL ? [process.env.CLIENT_URL, 'https://aqi-aggregator-seven.vercel.app/'] : '*';
   const io = new Server(server, {
     cors: {
-      origin: allowedOrigins,
-      methods: ['GET', 'POST']
+      origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) {
+          callback(null, true);
+        } else {
+          callback(null, false);
+        }
+      },
+      methods: ['GET', 'POST'],
+      credentials: true
     }
   });
 
@@ -43,6 +51,13 @@ async function bootstrap() {
 
   // 3. Initialize baseline stations and historical records
   await ingestionService.initializeDatabase();
+
+  try {
+    await Station.createIndexes();
+    console.log('[MongoDB] Verified collection indexes (including 2dsphere on location).');
+  } catch (idxErr) {
+    console.warn('[MongoDB] Index creation notice:', idxErr.message);
+  }
 
   // 4. Seed default admin credentials
   await seedDefaultAdmin();
