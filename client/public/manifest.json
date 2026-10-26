@@ -1,0 +1,17 @@
+{
+  "short_name": "AeroWatch",
+  "name": "AeroWatch - Real-Time AQI Aggregator & Mapping System",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#090d16",
+  "theme_color": "#0ea5e9",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "description": "Real-time air quality index monitoring, geospatial heatmaps, alerts, and forecasts."
+}
